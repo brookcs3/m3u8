@@ -4,31 +4,96 @@ Contains JavaScript code templates for M3U8 detection
 Based on qooly's detection methods
 """
 
-# XMLHttpRequest hook template (from qooly)
+# XMLHttpRequest hook template (from qooly's actual implementation)
 XHR_HOOK_TEMPLATE = """
-// Hook XMLHttpRequest to catch M3U8 requests
+// Hook XMLHttpRequest to catch M3U8 requests - Qooly's comprehensive approach
 (function() {
     const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+    
     XMLHttpRequest.prototype.open = function(method, url, async, user, password) {
-        if (url.toLowerCase().includes('.m3u8')) {
+        this._url = url;
+        this._method = method;
+        return originalOpen.apply(this, arguments);
+    };
+    
+    XMLHttpRequest.prototype.send = function(data) {
+        const xhr = this;
+        const url = this._url;
+        
+        // Qooly's URL pattern detection (broader than just .m3u8)
+        if (url && (
+            url.toLowerCase().includes('.m3u8') ||
+            url.toLowerCase().includes('playlist') ||
+            url.toLowerCase().includes('manifest') ||
+            url.toLowerCase().includes('/hls/') ||
+            url.toLowerCase().includes('master') ||
+            url.toLowerCase().includes('stream')
+        )) {
             console.log('M3U8_DETECTED_XHR: ' + url);
         }
-        return originalOpen.apply(this, arguments);
+        
+        // Qooly's response header monitoring - THE KEY PART
+        xhr.addEventListener('readystatechange', function() {
+            if (xhr.readyState === 4 && xhr.status >= 200 && xhr.status < 300) {
+                const contentType = xhr.getResponseHeader('content-type');
+                if (contentType && [
+                    'application/vnd.apple.mpegurl',
+                    'application/x-mpegURL',
+                    'application/mpegurl',
+                    'audio/mpegurl',
+                    'audio/x-mpegurl',
+                    'application/vnd.apple.mpegurl.audio'
+                ].some(type => contentType.toLowerCase().includes(type.toLowerCase()))) {
+                    console.log('M3U8_DETECTED_XHR_CONTENT_TYPE: ' + url);
+                }
+            }
+        });
+        
+        return originalSend.apply(this, arguments);
     };
 })();
 """
 
-# Fetch API hook template (from qooly) 
+# Fetch API hook template (from qooly's actual implementation)
 FETCH_HOOK_TEMPLATE = """
-// Hook fetch API to catch M3U8 requests
+// Hook fetch API to catch M3U8 requests - Qooly's comprehensive approach
 (function() {
     const originalFetch = window.fetch;
-    window.fetch = function(...args) {
-        const url = args[0];
-        if (typeof url === 'string' && url.toLowerCase().includes('.m3u8')) {
+    window.fetch = async function(...args) {
+        const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
+        
+        // Qooly's URL pattern detection (broader patterns)
+        if (url && (
+            url.toLowerCase().includes('.m3u8') ||
+            url.toLowerCase().includes('playlist') ||
+            url.toLowerCase().includes('manifest') ||
+            url.toLowerCase().includes('/hls/') ||
+            url.toLowerCase().includes('master') ||
+            url.toLowerCase().includes('stream')
+        )) {
             console.log('M3U8_DETECTED_FETCH: ' + url);
         }
-        return originalFetch.apply(this, arguments);
+        
+        // Call original fetch and check response headers
+        const response = await originalFetch.apply(this, args);
+        
+        // Qooly's response header monitoring - THE KEY PART
+        if (response.ok) {
+            const contentType = response.headers.get('content-type');
+            if (contentType && [
+                'application/vnd.apple.mpegurl',
+                'application/x-mpegURL', 
+                'application/mpegurl',
+                'audio/mpegurl',
+                'audio/x-mpegurl',
+                'application/vnd.apple.mpegurl.audio'
+            ].some(type => contentType.toLowerCase().includes(type.toLowerCase()))) {
+                console.log('M3U8_DETECTED_FETCH_CONTENT_TYPE: ' + url);
+            }
+        }
+        
+        return response;
     };
 })();
 """

@@ -39,10 +39,12 @@ class JSInjector(QObject):
         Handle console messages from injected JavaScript
         Step 4: Parse M3U8 URLs from JS console messages
         """
-        # Look for our M3U8 detection markers
+        # Look for our M3U8 detection markers (updated for Qooly's approach)
         m3u8_markers = [
             'M3U8_DETECTED_XHR: ',
-            'M3U8_DETECTED_FETCH: ', 
+            'M3U8_DETECTED_XHR_CONTENT_TYPE: ',
+            'M3U8_DETECTED_FETCH: ',
+            'M3U8_DETECTED_FETCH_CONTENT_TYPE: ',
             'M3U8_DETECTED_VIDEO: '
         ]
         
@@ -52,7 +54,9 @@ class JSInjector(QObject):
                 url = message.replace(marker, '').strip()
                 method_map = {
                     'M3U8_DETECTED_XHR: ': 'javascript_xhr',
+                    'M3U8_DETECTED_XHR_CONTENT_TYPE: ': 'javascript_xhr_content_type',
                     'M3U8_DETECTED_FETCH: ': 'javascript_fetch',
+                    'M3U8_DETECTED_FETCH_CONTENT_TYPE: ': 'javascript_fetch_content_type',
                     'M3U8_DETECTED_VIDEO: ': 'javascript_video_element'
                 }
                 

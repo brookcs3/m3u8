@@ -163,6 +163,11 @@ class MainWindow(QMainWindow):
             display_text += f"📺 Stream #{i}\n"
             display_text += f"   URL: {stream['url']}\n"
             display_text += f"   Method: {stream['detection_method']}\n"
+            
+            # Show content type if detected via headers
+            if 'content_type' in stream and stream['content_type']:
+                display_text += f"   Content-Type: {stream['content_type']}\n"
+                
             display_text += f"   Page: {stream['page_title']}\n"
             display_text += f"   From: {stream['page_url']}\n"
             display_text += "-" * 40 + "\n\n"

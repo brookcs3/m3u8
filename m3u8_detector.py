@@ -3,9 +3,12 @@ M3U8 Detection Engine
 Handles network request interception and M3U8 URL detection
 """
 
-from PySide6.QtWebEngineCore import QWebEngineUrlRequestInterceptor
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtWebEngineCore import QWebEngineUrlRequestInterceptor, QWebEnginePage
+from PySide6.QtCore import QObject, Signal, QUrl
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from urllib.parse import urlparse, parse_qs
+import requests
+from threading import Thread
 
 class M3U8Detector(QWebEngineUrlRequestInterceptor):
     """
@@ -36,6 +39,7 @@ class M3U8Detector(QWebEngineUrlRequestInterceptor):
         """
         Intercept network requests to detect M3U8 streams
         Step 1: Basic URL pattern detection
+        Step 3: Content-Type header detection
         """
         url = info.requestUrl().toString()
         
@@ -61,6 +65,10 @@ class M3U8Detector(QWebEngineUrlRequestInterceptor):
                 self.detected_urls.add(url)
                 print(f"🔍 M3U8Detector: Found M3U8 URL via pattern: {url}")
                 self.m3u8_detected.emit(stream_info)
+        else:
+            # Step 3: Check Content-Type headers for URLs that don't match pattern
+            # Do this in a background thread to avoid blocking
+            Thread(target=self._check_content_type_async, args=(url,), daemon=True).start()
         
     def detect_from_url(self, url):
         """
@@ -104,12 +112,64 @@ class M3U8Detector(QWebEngineUrlRequestInterceptor):
             
         return False
         
+    def _check_content_type_async(self, url):
+        """
+        Check Content-Type headers in background thread
+        Step 3: Content-Type header detection implementation
+        """
+        # Skip if already detected or if URL is clearly not video-related
+        if url in self.detected_urls:
+            return
+            
+        # Skip common non-video file types
+        skip_extensions = ['.js', '.css', '.html', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.woff', '.ttf']
+        url_lower = url.lower()
+        if any(ext in url_lower for ext in skip_extensions):
+            return
+            
+        try:
+            # Make HEAD request to check Content-Type without downloading content
+            response = requests.head(url, timeout=5, allow_redirects=True)
+            content_type = response.headers.get('content-type', '').lower()
+            
+            if self.detect_from_headers({'content-type': content_type}):
+                # Create stream info dict
+                stream_info = {
+                    'url': url,
+                    'detection_method': 'content_type_header',
+                    'page_url': '',  # Will be populated later from GUI
+                    'page_title': '',  # Will be populated later from GUI
+                    'quality': '',   # Will be determined in processing
+                    'is_master_playlist': False,  # Will be determined in processing
+                    'timestamp': None,
+                    'content_type': content_type  # Include the detected content type
+                }
+                
+                # Only emit if we haven't seen this URL before
+                if url not in self.detected_urls:
+                    self.detected_urls.add(url)
+                    print(f"🔍 M3U8Detector: Found M3U8 URL via Content-Type '{content_type}': {url}")
+                    self.m3u8_detected.emit(stream_info)
+                    
+        except Exception as e:
+            # Silently ignore network errors to avoid spam
+            pass
+        
     def detect_from_headers(self, headers):
         """
         Detect M3U8 from response headers
-        TODO: Will be implemented in Step 3 (Content-Type header detection)
+        Step 3: Content-Type header detection implementation
         """
-        # Placeholder for Step 3
+        if not isinstance(headers, dict):
+            return False
+            
+        content_type = headers.get('content-type', '').lower()
+        
+        # Check against Qooly's M3U8 content types
+        for m3u8_type in self.m3u8_content_types:
+            if m3u8_type.lower() in content_type:
+                return True
+                
         return False
         
     def clear_detected_urls(self):

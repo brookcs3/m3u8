@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (
     QTextEdit,
 )
 from PySide6.QtWebEngineWidgets import QWebEngineView
+from PySide6.QtWebEngineCore import QWebEngineProfile
+from m3u8_detector import M3U8Detector
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -63,9 +65,21 @@ class MainWindow(QMainWindow):
         url_layout.addWidget(self.go_button)
         self.drawer_layout.addLayout(url_layout)
 
-        # Browser in drawer
+        # Browser in drawer with M3U8 detection
         self.web_view = QWebEngineView()
+        
+        # Set up M3U8 detector
+        self.profile = QWebEngineProfile.defaultProfile()
+        self.m3u8_detector = M3U8Detector()
+        self.profile.setUrlRequestInterceptor(self.m3u8_detector)
+        
+        # Connect detector signal to our handler
+        self.m3u8_detector.m3u8_detected.connect(self.on_m3u8_detected)
+        
         self.drawer_layout.addWidget(self.web_view)
+        
+        # Store detected streams
+        self.detected_streams = []
         
         self.main_layout.addWidget(self.drawer)
         
@@ -104,4 +118,58 @@ class MainWindow(QMainWindow):
         if not url.startswith("http"):
             url = "http://" + url
         
+        # Clear previous detections when navigating to new page
+        self.m3u8_detector.clear_detected_urls()
+        self.detected_streams.clear()
+        
         self.web_view.setUrl(QUrl(url))
+        
+        # Update content area to show we're ready for detection
+        self.content_area.setText("🎯 M3U8 Detection Active\n\nNavigating to: " + url + "\n\nWaiting for M3U8 streams to be detected...")
+        
+    @Slot(dict)
+    def on_m3u8_detected(self, stream_info):
+        """
+        Handler for when M3U8 stream is detected
+        """
+        # Add current page context to stream info
+        current_url = self.web_view.url().toString()
+        current_title = self.web_view.page().title()
+        
+        stream_info['page_url'] = current_url
+        stream_info['page_title'] = current_title
+        
+        # Add to our detected streams list
+        self.detected_streams.append(stream_info)
+        
+        # Update the display
+        self.update_streams_display()
+        
+        print(f"🎯 GUI: M3U8 stream detected from {stream_info['detection_method']}: {stream_info['url']}")
+        
+    def update_streams_display(self):
+        """
+        Update the content area with detected streams
+        """
+        if not self.detected_streams:
+            self.content_area.setText("🎯 M3U8 Detection Active\n\nNo streams detected yet...")
+            return
+            
+        # Build display text
+        display_text = f"🎯 DETECTED M3U8 STREAMS ({len(self.detected_streams)})\n"
+        display_text += "=" * 50 + "\n\n"
+        
+        for i, stream in enumerate(self.detected_streams, 1):
+            display_text += f"📺 Stream #{i}\n"
+            display_text += f"   URL: {stream['url']}\n"
+            display_text += f"   Method: {stream['detection_method']}\n"
+            display_text += f"   Page: {stream['page_title']}\n"
+            display_text += f"   From: {stream['page_url']}\n"
+            display_text += "-" * 40 + "\n\n"
+            
+        self.content_area.setText(display_text)
+        
+        # Auto-scroll to bottom to show latest detection
+        cursor = self.content_area.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        self.content_area.setTextCursor(cursor)

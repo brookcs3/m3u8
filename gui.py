@@ -11,8 +11,29 @@ from PySide6.QtWidgets import (
     QTextEdit,
 )
 from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWebEngineCore import QWebEngineProfile
+from PySide6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
 from m3u8_detector import M3U8Detector
+from js_injector import JSInjector
+
+class M3U8WebPage(QWebEnginePage):
+    """
+    Custom web page class for M3U8 detection
+    Handles JavaScript injection and console message monitoring
+    """
+    
+    def __init__(self, js_injector, parent=None):
+        super().__init__(parent)
+        self.js_injector = js_injector
+        
+    def javaScriptConsoleMessage(self, level, message, line_number, source_id):
+        """
+        Override to capture JavaScript console messages for M3U8 detection
+        """
+        # Pass console messages to JS injector for processing
+        self.js_injector.handle_js_console_message(level, message, line_number, source_id)
+        
+        # Call parent implementation for normal console handling
+        super().javaScriptConsoleMessage(level, message, line_number, source_id)
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -73,8 +94,19 @@ class MainWindow(QMainWindow):
         self.m3u8_detector = M3U8Detector()
         self.profile.setUrlRequestInterceptor(self.m3u8_detector)
         
-        # Connect detector signal to our handler
+        # Set up JavaScript injector
+        self.js_injector = JSInjector()
+        
+        # Create custom web page with JS injection
+        self.web_page = M3U8WebPage(self.js_injector)
+        self.web_view.setPage(self.web_page)
+        
+        # Connect signals to our handlers
         self.m3u8_detector.m3u8_detected.connect(self.on_m3u8_detected)
+        self.js_injector.js_m3u8_detected.connect(self.on_m3u8_detected)
+        
+        # Connect page load finished to inject JavaScript
+        self.web_page.loadFinished.connect(self.on_page_load_finished)
         
         self.drawer_layout.addWidget(self.web_view)
         
@@ -127,10 +159,19 @@ class MainWindow(QMainWindow):
         # Update content area to show we're ready for detection
         self.content_area.setText("🎯 M3U8 Detection Active\n\nNavigating to: " + url + "\n\nWaiting for M3U8 streams to be detected...")
         
+    @Slot(bool)
+    def on_page_load_finished(self, success):
+        """
+        Handler for when page finishes loading - inject JavaScript detection
+        """
+        if success:
+            print("🔍 GUI: Page loaded, injecting JavaScript M3U8 detection")
+            self.js_injector.inject_into_page(self.web_page)
+        
     @Slot(dict)
     def on_m3u8_detected(self, stream_info):
         """
-        Handler for when M3U8 stream is detected
+        Handler for when M3U8 stream is detected (from any detection method)
         """
         # Add current page context to stream info
         current_url = self.web_view.url().toString()
@@ -139,9 +180,20 @@ class MainWindow(QMainWindow):
         stream_info['page_url'] = current_url
         stream_info['page_title'] = current_title
         
-        # Add to our detected streams list
-        self.detected_streams.append(stream_info)
+        # Check for duplicates (same URL from different detection methods)
+        duplicate = False
+        for existing_stream in self.detected_streams:
+            if existing_stream['url'] == stream_info['url']:
+                duplicate = True
+                # Update detection method to show multiple methods if different
+                if existing_stream['detection_method'] != stream_info['detection_method']:
+                    existing_stream['detection_method'] = f"{existing_stream['detection_method']}, {stream_info['detection_method']}"
+                break
         
+        # Only add if not duplicate
+        if not duplicate:
+            self.detected_streams.append(stream_info)
+            
         # Update the display
         self.update_streams_display()
         
